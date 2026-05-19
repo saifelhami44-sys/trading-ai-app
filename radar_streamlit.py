@@ -2344,11 +2344,18 @@ def render_controls():
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
+        # Load coins if not already loaded
         if not st.session_state.initial_coin_order:
-            coins = load_symbols()
+            try:
+                with st.spinner("Loading coins from Binance..."):
+                    coins = load_symbols()
+            except Exception as e:
+                st.warning(f"Could not load coins: {e}")
+                coins = []
         else:
             coins = st.session_state.initial_coin_order
 
+        # Build coin options
         coin_options = []
         for base in coins:
             if base in st.session_state.mtf_coin_data:
@@ -2361,15 +2368,40 @@ def render_controls():
                 display = f"{base:6s}  [--/-- WAIT   0%]"
             coin_options.append(display)
 
+        # Fallback if no coins loaded
+        if not coin_options:
+            coin_options = ["BTC   [--/-- WAIT   0%]"]
+
         selected_coin = st.selectbox("🪙 COIN", coin_options, index=0, key="coin_selector")
-        base = selected_coin.split()[0].strip()
+
+        # Manual symbol entry fallback
+        manual_symbol = st.text_input("Or enter symbol:", value="", key="manual_symbol", 
+                                       placeholder="e.g. ETHUSDT")
+
+        # Safely extract base from selected coin
+        try:
+            base = selected_coin.split()[0].strip() if selected_coin else "BTC"
+        except:
+            base = "BTC"
+
         new_symbol = base.upper() + "USDT"
+
+        # Check if manual symbol entered
+        if manual_symbol and manual_symbol.upper() != st.session_state.symbol:
+            new_symbol = manual_symbol.upper()
+            if not new_symbol.endswith("USDT"):
+                new_symbol += "USDT"
+            base = new_symbol.replace("USDT", "")
+
         if new_symbol != st.session_state.symbol:
             st.session_state.symbol = new_symbol
             st.session_state.current_coin_base = base
             st.session_state.candle_deque.clear()
             st.session_state.price_history.clear()
-            load_historical_klines()
+            try:
+                load_historical_klines()
+            except Exception as e:
+                st.error(f"Failed to load data: {e}")
             st.rerun()
 
     with col2:
@@ -2767,9 +2799,13 @@ def main():
         bg_thread = threading.Thread(target=background_update, daemon=True)
         bg_thread.start()
 
-    # Auto refresh every 3 seconds
-    time.sleep(0.1)  # Small delay to prevent too fast reruns
-    st.rerun()
+    # Auto refresh using Streamlit's native auto-refresh
+    # This is safer than st.rerun() in a loop
+    st.markdown('<meta http-equiv="refresh" content="5">', unsafe_allow_html=True)
+
+    # Manual refresh button
+    if st.button("🔄 Auto Refresh (5s)", key="auto_refresh"):
+        st.rerun()
 
 if __name__ == "__main__":
     main()
