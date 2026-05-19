@@ -59,6 +59,11 @@ HISTORY_LIMIT = 500
 PRICE_HISTORY_MAX = 30
 SIGNAL_HISTORY_MAX = 50
 VERSION = "16.1-SCALP-OPT-STREAMLIT"
+API_BASE = "https://fapi.binance.com"  # Mainnet Futures API
+# API_BASE = "https://testnet.binancefuture.com"  # Testnet (for testing)
+# API_BASE = "https://api.binance.com"  # Spot API fallback
+API_TIMEOUT = 8
+API_RETRY_COUNT = 3
 API_DELAY_SEC = 0.06
 ML_RETRAIN_EVERY_N_CANDLES = 30
 ML_MIN_TRAIN_SAMPLES = 15
@@ -429,18 +434,37 @@ def _init_session():
 if st.session_state._session is None:
     st.session_state._session = _init_session()
 
-def _api_get(url, timeout=8):
+def _api_get(url, timeout=API_TIMEOUT):
     with st.session_state.api_lock:
         elapsed = time.time() - st.session_state.last_api_call
         if elapsed < API_DELAY_SEC:
             time.sleep(API_DELAY_SEC - elapsed)
-        try:
-            r = st.session_state._session.get(url, timeout=timeout)
-            st.session_state.last_api_call = time.time()
-            return r
-        except Exception as e:
-            st.session_state.last_api_call = time.time()
-            raise e
+
+        last_error = None
+        for attempt in range(API_RETRY_COUNT):
+            try:
+                r = st.session_state._session.get(url, timeout=timeout)
+                st.session_state.last_api_call = time.time()
+                if r.status_code == 200:
+                    return r
+                elif r.status_code in [429, 418]:  # Rate limit
+                    wait_time = (attempt + 1) * 2
+                    logging.warning(f"Rate limited (attempt {attempt+1}), waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logging.warning(f"API returned {r.status_code}: {url[:80]}")
+                    return r
+            except Exception as e:
+                last_error = e
+                logging.warning(f"API attempt {attempt+1} failed: {str(e)[:80]}")
+                if attempt < API_RETRY_COUNT - 1:
+                    time.sleep(1 + attempt)
+
+        st.session_state.last_api_call = time.time()
+        if last_error:
+            raise last_error
+        raise Exception(f"API failed after {API_RETRY_COUNT} attempts")
 
 def _is_meme_coin():
     base = st.session_state.symbol.replace("USDT", "") if st.session_state.symbol else ""
@@ -1902,10 +1926,12 @@ def _deep_analyze(df: pd.DataFrame, cp: float) -> AnalysisResult:
 def load_historical_klines():
     try:
         limit = _get_history_limit()
-        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={st.session_state.symbol}&interval={st.session_state.interval}&limit={limit}"
+        url = f"{API_BASE}/fapi/v1/klines?symbol={st.session_state.symbol}&interval={st.session_state.interval}&limit={limit}"
+        logging.info(f"Fetching klines from: {API_BASE}")
         r = _api_get(url, timeout=10)
         if r.status_code != 200:
-            set_error(f"REST {r.status_code}: {st.session_state.symbol}")
+            set_error(f"REST {r.status_code}: {st.session_state.symbol} - Check if API_BASE is correct")
+            logging.error(f"API Error {r.status_code}: {r.text[:200]}")
             return
         klines = r.json()
         if not klines or len(klines) < 10:
@@ -1928,13 +1954,14 @@ def load_historical_klines():
         st.session_state.data_loaded = True
         logging.info("Loaded %d candles for %s %s", len(df), st.session_state.symbol, st.session_state.interval)
     except Exception as e:
-        set_error("REST: " + str(e)[:60])
+        set_error("REST: " + str(e)[:100])
+        logging.error(f"Failed to load klines: {e}")
 
 def fetch_funding():
     try:
         if not st.session_state.symbol:
             return
-        url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={st.session_state.symbol}&limit=1"
+        url = f"{API_BASE}/fapi/v1/fundingRate?symbol={st.session_state.symbol}&limit=1"
         r = _api_get(url, timeout=4)
         if r.status_code == 200:
             data = r.json()
@@ -1949,7 +1976,7 @@ def fetch_oi():
     try:
         if not st.session_state.symbol:
             return
-        url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={st.session_state.symbol}"
+        url = f"{API_BASE}/fapi/v1/openInterest?symbol={st.session_state.symbol}"
         r = _api_get(url, timeout=4)
         if r.status_code == 200:
             data = r.json()
@@ -1966,7 +1993,7 @@ def fetch_oi():
 
 def fetch_instant_price():
     try:
-        url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={st.session_state.symbol}"
+        url = f"{API_BASE}/fapi/v1/premiumIndex?symbol={st.session_state.symbol}"
         r = _api_get(url, timeout=2)
         if r.status_code == 200:
             data = r.json()
@@ -1975,12 +2002,17 @@ def fetch_instant_price():
             st.session_state.mark_price = p
             st.session_state.prev_price = p
             st.session_state.last_price_update = time.time()
+            return True
+        else:
+            logging.warning(f"Price API returned {r.status_code}")
+            return False
     except Exception as e:
-        logging.debug("Instant price error: %s", str(e)[:50])
+        logging.warning("Instant price error: %s", str(e)[:80])
+        return False
 
 def load_symbols():
     try:
-        url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+        url = "{API_BASE}/fapi/v1/exchangeInfo"
         r = _api_get(url, timeout=10)
         info = r.json()
         all_syms = [
@@ -1990,7 +2022,7 @@ def load_symbols():
             and s.get("status") == "TRADING"
         ]
 
-        ticker_url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+        ticker_url = "{API_BASE}/fapi/v1/ticker/24hr"
         tr = _api_get(ticker_url, timeout=10)
         tickers = {t["symbol"]: t for t in tr.json()}
 
@@ -2188,7 +2220,7 @@ def refresh_intel():
     try:
         sym = st.session_state.symbol
         limit = max(_get_history_limit(), 300)
-        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval={st.session_state.interval}&limit={limit}"
+        url = f"{API_BASE}/fapi/v1/klines?symbol={sym}&interval={st.session_state.interval}&limit={limit}"
         r = _api_get(url, timeout=10)
         klines = r.json()
         if not klines or len(klines) < 50:
@@ -2224,7 +2256,7 @@ def _mtf_fetch_one(tf, symbol, results, lock):
                 with lock:
                     results[tf] = (result.direction, result.strength, result.confidence, result.score, result.reason)
                 return
-        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={tf}&limit={TF_HISTORY_MAP.get(tf, 150)}"
+        url = f"{API_BASE}/fapi/v1/klines?symbol={symbol}&interval={tf}&limit={TF_HISTORY_MAP.get(tf, 150)}"
         r = st.session_state._session.get(url, timeout=8)
         klines = r.json()
         if not klines or len(klines) < 50:
@@ -2375,16 +2407,25 @@ def run_analysis():
 # --- Background Data Update ---
 def background_update():
     import time
+    fail_count = 0
     while st.session_state.running:
         try:
-            fetch_instant_price()
+            price_ok = fetch_instant_price()
+            if not price_ok:
+                fail_count += 1
+                if fail_count >= 5:
+                    logging.error("Too many price fetch failures, API may be down")
+                    fail_count = 0
+            else:
+                fail_count = 0
             fetch_funding()
             fetch_oi()
             run_analysis()
             time.sleep(2)
         except Exception as e:
-            logging.debug("Background update error: %s", str(e)[:60])
-            time.sleep(2)
+            logging.warning("Background update error: %s", str(e)[:80])
+            fail_count += 1
+            time.sleep(5 if fail_count > 3 else 2)
 
 # --- UI Components ---
 def render_header():
@@ -2799,7 +2840,7 @@ def render_bt_tab():
         st.rerun()
 
 def render_status_bar():
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"<div style='font-size:0.75rem; color:#888;'>Last Update: {st.session_state.last_update}</div>", unsafe_allow_html=True)
     with col2:
@@ -2809,6 +2850,9 @@ def render_status_bar():
         ml_color = "#02c076" if "ACTIVE" in st.session_state.ml_status else "#f0b90b" if "Training" in st.session_state.ml_status else "#888"
         st.markdown(f"<div style='font-size:0.75rem; color:{ml_color};'>{st.session_state.ml_status}</div>", unsafe_allow_html=True)
     with col4:
+        api_short = API_BASE.replace("https://", "").replace("http://", "")[:20]
+        st.markdown(f"<div style='font-size:0.75rem; color:#888;'>API: {api_short}</div>", unsafe_allow_html=True)
+    with col5:
         if st.session_state.error_msg:
             st.markdown(f"<div style='font-size:0.75rem; color:#cf304a;'>⚠️ {st.session_state.error_msg}</div>", unsafe_allow_html=True)
         else:
@@ -2838,6 +2882,18 @@ def main():
 
     render_status_bar()
 
+    # Test API connection before starting background thread
+    try:
+        test_url = f"{API_BASE}/fapi/v1/ping"
+        test_r = st.session_state._session.get(test_url, timeout=5)
+        if test_r.status_code == 200:
+            logging.info(f"✅ API connection OK: {API_BASE}")
+        else:
+            logging.warning(f"⚠️ API test returned {test_r.status_code}")
+    except Exception as e:
+        logging.error(f"❌ API connection failed: {e}")
+        st.error(f"⚠️ Cannot connect to {API_BASE}. Try changing API_BASE in the code.")
+
     # Start background thread only once
     if not st.session_state.threads_started:
         st.session_state.threads_started = True
@@ -2845,10 +2901,10 @@ def main():
         bg_thread.start()
 
     # Auto refresh using HTML meta tag (safer than st.rerun loop)
-    st.markdown('<meta http-equiv="refresh" content="5">', unsafe_allow_html=True)
+    st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
     # Manual refresh button
-    if st.button("🔄 Auto Refresh (5s)", key="auto_refresh"):
+    if st.button("🔄 Auto Refresh (60s)", key="auto_refresh"):
         st.rerun()
 
 if __name__ == "__main__":
