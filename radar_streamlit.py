@@ -28,12 +28,13 @@ try:
 except ImportError:
     REQUESTS_OK = False
     st.error("pip install requests")
+    st.stop()
 
 try:
     import websocket
     WEBSOCKET_OK = True
 except ImportError:
-    st.error("pip install websocket-client")
+    WEBSOCKET_OK = False
 
 try:
     from sklearn.ensemble import GradientBoostingClassifier
@@ -98,6 +99,55 @@ STANDARD_MIN_MTF = 4
 FUNDING_WARNING = -0.01
 FUNDING_DANGER = -0.05
 OI_DROP_PCT = 5.0
+
+# --- POPULAR COINS FALLBACK ---
+POPULAR_COINS = [
+    "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "TRX", "ADA", "AVAX", "SHIB",
+    "DOT", "LINK", "BCH", "LTC", "UNI", "ETC", "XLM", "FIL", "HBAR", "ARB",
+    "NEAR", "ALGO", "VET", "ICP", "APT", "OP", "SUI", "TAO", "SEI", "PYTH",
+    "JUP", "WIF", "BONK", "PEPE", "FLOKI", "WLD", "RNDR", "GRT", "AAVE", "MKR",
+    "THETA", "AXS", "SAND", "MANA", "CHZ", "ENJ", "BAT", "ZRX", "KNC", "COMP",
+    "YFI", "CRV", "1INCH", "SUSHI", "DYDX", "SNX", "UMA", "BAL", "LRC", "IMX",
+    "CELR", "SKL", "OCEAN", "FET", "AGIX", "RNDR", "AR", "MINA", "FLOW", "ROSE",
+    "KAVA", "INJ", "COTI", "DUSK", "BEAM", "ONT", "WAVES", "DASH", "ZEC", "XMR",
+    "XTZ", "EOS", "NEO", "ATOM", "FTM", "ONE", "GLMR", "MOVR", "ASTR", "ACA",
+    "BNC", "KSM", "EDG", "PHA", "CLV", "PACA", "KILT", "POLS", "LIT", "BOND",
+    "PERP", "DODO", "MIR", "ANC", "PSI", "NEXO", "CEL", "FTT", "LUNA", "UST",
+    "MIM", "SPELL", "TIME", "OHM", "KLIMA", "BTRFLY", "REDACTED", "PENDLE", "EIGEN",
+    "ETHFI", "RENZO", "KELP", "PUFFER", "BABY", "ENA", "USDE", "FRAX", "FXS", "CVX",
+    "CRV", "SPELL", "MIM", "LDO", "RPL", "FXN", "PENDLE", "EIGEN", "ETHFI", "ZIRCUIT",
+    "BLAST", "MANTLE", "MODE", "LINEA", "SCROLL", "TAIKO", "ZK", "POLYGON", "MATIC",
+    "AGI", "FET", "OCEAN", "NMR", "RLC", "GNT", "STORJ", "SC", "FIL", "AR",
+    "HOT", "HOLO", "IOTA", "MIOTA", "XDC", "QNT", "ALGO", "HBAR", "VET", "THETA",
+    "TFUEL", "ZIL", "EGLD", "XTZ", "EOS", "NEO", "ATOM", "ICP", "FLOW", "MINA",
+    "ROSE", "ASTR", "GLMR", "MOVR", "ACA", "BNC", "KSM", "EDG", "PHA", "CLV",
+    "PACA", "KILT", "POLS", "LIT", "BOND", "PERP", "DODO", "MIR", "ANC", "PSI",
+    "NEXO", "CEL", "FTT", "LUNA", "UST", "MIM", "SPELL", "TIME", "OHM", "KLIMA",
+    "BTRFLY", "REDACTED", "PENDLE", "EIGEN", "ETHFI", "RENZO", "KELP", "PUFFER",
+    "BABY", "ENA", "USDE", "FRAX", "FXS", "CVX", "CRV", "SPELL", "MIM", "LDO",
+    "RPL", "FXN", "PENDLE", "EIGEN", "ETHFI", "ZIRCUIT", "BLAST", "MANTLE", "MODE",
+    "LINEA", "SCROLL", "TAIKO", "ZK", "POLYGON", "MATIC", "AGI", "FET", "OCEAN",
+    "NMR", "RLC", "GNT", "STORJ", "SC", "FIL", "AR", "HOT", "HOLO", "IOTA",
+    "MIOTA", "XDC", "QNT", "ALGO", "HBAR", "VET", "THETA", "TFUEL", "ZIL", "EGLD",
+    "XTZ", "EOS", "NEO", "ATOM", "ICP", "FLOW", "MINA", "ROSE", "ASTR", "GLMR",
+    "MOVR", "ACA", "BNC", "KSM", "EDG", "PHA", "CLV", "PACA", "KILT", "POLS",
+    "LIT", "BOND", "PERP", "DODO", "MIR", "ANC", "PSI", "NEXO", "CEL", "FTT",
+    "LUNA", "UST", "MIM", "SPELL", "TIME", "OHM", "KLIMA", "BTRFLY", "REDACTED",
+    "PENDLE", "EIGEN", "ETHFI", "RENZO", "KELP", "PUFFER", "BABY", "ENA", "USDE",
+    "FRAX", "FXS", "CVX", "CRV", "SPELL", "MIM", "LDO", "RPL", "FXN", "PENDLE",
+    "EIGEN", "ETHFI", "ZIRCUIT", "BLAST", "MANTLE", "MODE", "LINEA", "SCROLL",
+    "TAIKO", "ZK", "POLYGON", "MATIC", "AGI", "FET", "OCEAN", "NMR", "RLC", "GNT",
+    "STORJ", "SC", "FIL", "AR", "HOT", "HOLO", "IOTA", "MIOTA", "XDC", "QNT",
+    "ALGO", "HBAR", "VET", "THETA", "TFUEL", "ZIL", "EGLD", "XTZ", "EOS", "NEO",
+    "ATOM", "ICP", "FLOW", "MINA", "ROSE", "ASTR", "GLMR", "MOVR", "ACA", "BNC",
+    "KSM", "EDG", "PHA", "CLV", "PACA", "KILT", "POLS", "LIT", "BOND", "PERP",
+    "DODO", "MIR", "ANC", "PSI", "NEXO", "CEL", "FTT", "LUNA", "UST", "MIM",
+    "SPELL", "TIME", "OHM", "KLIMA", "BTRFLY", "REDACTED", "PENDLE", "EIGEN",
+    "ETHFI", "RENZO", "KELP", "PUFFER", "BABY", "ENA", "USDE", "FRAX", "FXS",
+    "CVX", "CRV", "SPELL", "MIM", "LDO", "RPL", "FXN", "PENDLE", "EIGEN",
+    "ETHFI", "ZIRCUIT", "BLAST", "MANTLE", "MODE", "LINEA", "SCROLL", "TAIKO",
+    "ZK", "POLYGON", "MATIC"
+]
 
 @dataclass
 class Candle:
@@ -347,6 +397,8 @@ def init_session_state():
         '_last_funding_update': 0,
         '_last_oi_update': 0,
         'threads_started': False,
+        'data_loaded': False,
+        'last_refresh_time': 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1873,6 +1925,7 @@ def load_historical_klines():
             st.session_state.mark_price = last_close
             st.session_state.last_price_update = time.time()
         st.session_state.new_data_event.set()
+        st.session_state.data_loaded = True
         logging.info("Loaded %d candles for %s %s", len(df), st.session_state.symbol, st.session_state.interval)
     except Exception as e:
         set_error("REST: " + str(e)[:60])
@@ -1923,7 +1976,7 @@ def fetch_instant_price():
             st.session_state.prev_price = p
             st.session_state.last_price_update = time.time()
     except Exception as e:
-        set_error("Instant price: " + str(e)[:50])
+        logging.debug("Instant price error: %s", str(e)[:50])
 
 def load_symbols():
     try:
@@ -1953,8 +2006,10 @@ def load_symbols():
         st.session_state.initial_coin_order = [x[0] for x in sym_data]
         return st.session_state.initial_coin_order
     except Exception as e:
-        set_error(str(e))
-        return []
+        logging.warning("Failed to load symbols from API: %s", str(e)[:60])
+        # Return popular coins as fallback
+        st.session_state.initial_coin_order = POPULAR_COINS[:50]
+        return st.session_state.initial_coin_order
 
 # --- Intel Functions ---
 def _compute_sr_levels(df: pd.DataFrame) -> list:
@@ -2109,7 +2164,7 @@ def _compute_liquidity(df: pd.DataFrame) -> dict:
     sl_sorted = sorted(sell_liq_levels, key=lambda x: abs(x - cp))[:3]
     buy_str = "Buy: " + " | ".join([f"{v:,.4f}" for v in sorted(bl_sorted)])
     sell_str = "Sell: " + " | ".join([f"{v:,.4f}" for v in sorted(sl_sorted)])
-    zones = f"{buy_str}\n{sell_str}"
+    zones = buy_str + "\n" + sell_str
     recent_low = min(lows[-5:])
     recent_high = max(highs[-5:])
     sweep_alert = "None detected"
@@ -2157,7 +2212,6 @@ def refresh_intel():
             st.session_state.intel_last_refresh = time.time()
     except Exception as e:
         logging.debug("Intel refresh error: %s", str(e)[:60])
-
 
 # --- MTF Functions ---
 def _mtf_fetch_one(tf, symbol, results, lock):
@@ -2331,7 +2385,6 @@ def background_update():
         except Exception as e:
             logging.debug("Background update error: %s", str(e)[:60])
             time.sleep(2)
-
 
 # --- UI Components ---
 def render_header():
@@ -2543,7 +2596,6 @@ def render_market_tab():
         st.session_state.signal_stats = {"buy": 0, "sell": 0, "wait": 0}
         st.rerun()
 
-
 def render_intel_tab():
     st.markdown("#### 🧠 SMART INTEL")
 
@@ -2586,9 +2638,7 @@ def render_intel_tab():
         st.markdown(html, unsafe_allow_html=True)
     with col2:
         st.markdown("**Liquidity Zones:**")
-        zones = st.session_state.intel_liq_zones
-        st.text(zones)
-        st.text(zones)
+        st.text(st.session_state.intel_liq_zones)
 
         sweep_color = "#02c076" if "BOUNCE" in st.session_state.intel_liq_sweep else "#cf304a" if "DROP" in st.session_state.intel_liq_sweep else "#888"
         html = f'<div class="metric-card"><div class="metric-label">SWEEP ALERT</div><div class="metric-value" style="color:{sweep_color};">{st.session_state.intel_liq_sweep}</div></div>'
@@ -2764,6 +2814,7 @@ def render_status_bar():
         else:
             st.markdown(f"<div style='font-size:0.75rem; color:#02c076;'>✅ System OK</div>", unsafe_allow_html=True)
 
+
 # --- Main App ---
 def main():
     render_header()
@@ -2787,20 +2838,13 @@ def main():
 
     render_status_bar()
 
-    # Auto-refresh using st.rerun() with a timer
-    # Note: In Streamlit, we use st.empty() and update it, or use st.rerun() with sleep
-    # For live updates, we'll use a placeholder that updates
-
     # Start background thread only once
     if not st.session_state.threads_started:
         st.session_state.threads_started = True
-        # Note: In Streamlit, threads should NOT call Streamlit APIs
-        # The background_update function only fetches data, no UI calls
         bg_thread = threading.Thread(target=background_update, daemon=True)
         bg_thread.start()
 
-    # Auto refresh using Streamlit's native auto-refresh
-    # This is safer than st.rerun() in a loop
+    # Auto refresh using HTML meta tag (safer than st.rerun loop)
     st.markdown('<meta http-equiv="refresh" content="5">', unsafe_allow_html=True)
 
     # Manual refresh button
